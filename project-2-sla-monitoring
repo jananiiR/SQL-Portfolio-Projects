@@ -1,0 +1,92 @@
+CREATE TABLE operations_tickets (
+  ticket_id       INTEGER PRIMARY KEY,
+  team            TEXT,    -- 'Content', 'Tech', 'Operations'
+  category        TEXT,    -- 'Bug', 'Data Issue', 'Process Gap', 'Access Request'
+  priority        TEXT,    -- 'High', 'Medium', 'Low'
+  created_at      DATETIME,
+  resolved_at     DATETIME,  -- NULL if still open
+  sla_hours       INTEGER    -- agreed SLA window
+);
+
+INSERT INTO operations_tickets VALUES
+(1,  'Content',    'Data Issue',      'High',   '2024-02-01 09:00', '2024-02-01 14:30', 8),
+(2,  'Tech',       'Bug',             'High',   '2024-02-01 10:00', '2024-02-02 11:00', 24),
+(3,  'Operations', 'Process Gap',     'Medium', '2024-02-02 08:00', '2024-02-04 09:00', 48),
+(4,  'Content',    'Access Request',  'Low',    '2024-02-02 13:00', '2024-02-05 10:00', 48),
+(5,  'Tech',       'Data Issue',      'Medium', '2024-02-03 09:00', '2024-02-03 17:00', 8),
+(6,  'Operations', 'Bug',             'High',   '2024-02-03 11:00', '2024-02-04 08:00', 24),
+(7,  'Content',    'Process Gap',     'Low',    '2024-02-04 09:00', '2024-02-06 11:00', 48),
+(8,  'Tech',       'Access Request',  'Medium', '2024-02-04 14:00', '2024-02-05 09:00', 24),
+(9,  'Operations', 'Data Issue',      'High',   '2024-02-05 08:00', '2024-02-05 12:00', 8),
+(10, 'Content',    'Bug',             'High',   '2024-02-05 10:00', '2024-02-07 11:00', 24),
+(11, 'Tech',       'Process Gap',     'Medium', '2024-02-06 09:00', NULL,               48),
+(12, 'Operations', 'Access Request',  'Low',    '2024-02-06 13:00', NULL,               48);
+
+-- For SQLite / MySQL
+SELECT
+  ticket_id,
+  team,
+  category,
+  priority,
+  sla_hours,
+  ROUND(
+    (JULIANDAY(resolved_at) - JULIANDAY(created_at)) * 24,
+    1
+  ) AS hours_taken,
+  CASE
+    WHEN resolved_at IS NULL THEN 'Open'
+    WHEN (JULIANDAY(resolved_at) - JULIANDAY(created_at)) * 24 <= sla_hours
+      THEN 'SLA Met'
+    ELSE 'SLA Breached'
+  END AS sla_status
+FROM operations_tickets;
+
+SELECT
+  team,
+  COUNT(*) AS total_tickets,
+  SUM(CASE
+    WHEN resolved_at IS NOT NULL
+     AND (JULIANDAY(resolved_at) - JULIANDAY(created_at)) * 24 <= sla_hours
+    THEN 1 ELSE 0
+  END) AS sla_met,
+  SUM(CASE
+    WHEN resolved_at IS NOT NULL
+     AND (JULIANDAY(resolved_at) - JULIANDAY(created_at)) * 24 > sla_hours
+    THEN 1 ELSE 0
+  END) AS sla_breached,
+  ROUND(
+    100.0 * SUM(CASE
+      WHEN resolved_at IS NOT NULL
+       AND (JULIANDAY(resolved_at) - JULIANDAY(created_at)) * 24 <= sla_hours
+      THEN 1 ELSE 0
+    END) / COUNT(*),
+    1
+  ) AS compliance_pct
+FROM operations_tickets
+GROUP BY team
+ORDER BY compliance_pct ASC;
+
+
+SELECT
+  category,
+  COUNT(*) AS total,
+  ROUND(
+    AVG((JULIANDAY(resolved_at) - JULIANDAY(created_at)) * 24),
+    1
+  ) AS avg_hours_to_resolve
+FROM operations_tickets
+WHERE resolved_at IS NOT NULL
+GROUP BY category
+ORDER BY avg_hours_to_resolve DESC;
+
+SELECT
+  ticket_id,
+  team,
+  category,
+  created_at,
+  sla_hours,
+  'Open - Needs Attention' AS flag
+FROM operations_tickets
+WHERE resolved_at IS NULL
+  AND priority = 'High'
+ORDER BY created_at ASC;
